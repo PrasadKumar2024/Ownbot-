@@ -1,7 +1,7 @@
 import express from "express";
 import bodyParser from "body-parser";
 import twilio from "twilio";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+// import { GoogleGenerativeAI } from "@google/generative-ai"; // REMOVE THIS LINE
 
 // Initialize app
 const app = express();
@@ -12,7 +12,7 @@ const requiredEnvVars = [
   'TWILIO_ACCOUNT_SID',
   'TWILIO_AUTH_TOKEN',
   'TWILIO_PHONE',
-  'GEMINI_API_KEY'
+  'HUGGINGFACE_API_KEY' // UPDATE THIS LINE
 ];
 
 for (const envVar of requiredEnvVars) {
@@ -27,33 +27,28 @@ const twilioClient = twilio(
   process.env.TWILIO_AUTH_TOKEN
 );
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ 
-  model: "gemini-1.0-pro",
-  safetySettings: [
-    {
-      category: "HARM_CATEGORY_HARASSMENT",
-      threshold: "BLOCK_ONLY_HIGH"
-    }
-  ]
-});
+// REPLACE THESE LINES WITH THE NEW FUNCTION
+async function getHuggingFaceReply(prompt) {
+    const response = await fetch(
+        "https://api-inference.huggingface.co/models/google/flan-t5-small",
+        {
+            headers: { Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}` },
+            method: "POST",
+            body: JSON.stringify({ inputs: prompt }),
+        }
+    );
+    const result = await response.json();
+    return result[0].generated_text;
+}
 
 // Webhook endpoint
 app.post("/api/whatsapp", async (req, res) => {
   const { Body: incomingMsg, From: sender } = req.body;
 
   try {
-    // Generate AI response
-    const result = await model.generateContent({
-      contents: [{ 
-        role: "user",
-        parts: [{ text: incomingMsg }]
-      }]
-    });
+    // Generate AI response using Hugging Face
+    const aiReply = await getHuggingFaceReply(incomingMsg);
     
-    const response = await result.response;
-    const aiReply = response.text();
-
     // Send WhatsApp reply
     await twilioClient.messages.create({
       body: aiReply,
