@@ -1,21 +1,45 @@
+import express from "express";
+import bodyParser from "body-parser";
 import twilio from "twilio";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
-export default async function handler(req, res) {
-  if (req.method === "POST") {
-    const MessagingResponse = twilio.twiml.MessagingResponse;
-    const twiml = new MessagingResponse();
+const app = express();
+app.use(bodyParser.urlencoded({ extended: false }));
 
-    // Message user sent
-    const incoming = req.body.Body;
+// Twilio setup
+const accountSid = process.env.TWILIO_ACCOUNT_SID;
+const authToken = process.env.TWILIO_AUTH_TOKEN;
+const twilioClient = twilio(accountSid, authToken);
 
-    // Simple reply (later we connect AI here)
-    let reply = "Hello 👋, you said: " + incoming;
+// Gemini setup
+const geminiApiKey = process.env.GEMINI_API_KEY;
+const genAI = new GoogleGenerativeAI(geminiApiKey);
+const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
-    twiml.message(reply);
+// Webhook for WhatsApp
+app.post("/api/whatsapp", async (req, res) => {
+  const incomingMsg = req.body.Body;
+  const from = req.body.From;
 
-    res.writeHead(200, { "Content-Type": "text/xml" });
-    res.end(twiml.toString());
-  } else {
-    res.status(200).json({ message: "WhatsApp bot is live 🚀" });
+  console.log("User:", incomingMsg);
+
+  try {
+    // Send message to Gemini
+    const result = await model.generateContent(incomingMsg);
+    const aiReply = result.response.text();
+
+    // Reply via Twilio
+    await twilioClient.messages.create({
+      from: "whatsapp:" + process.env.TWILIO_PHONE,
+      to: from,
+      body: aiReply
+    });
+
+    res.send("OK");
+  } catch (err) {
+    console.error("Error:", err);
+    res.status(500).send("Error");
   }
-}
+});
+
+export default app;
